@@ -39,7 +39,8 @@ type DashboardView struct {
 }
 
 // BuildDashboard converts checker + sensors data into UI-ready sections.
-func BuildDashboard(results []engine.CheckResult, stats collector.RawStats) DashboardView {
+func BuildDashboard(results []engine.CheckResult, stats *collector.RawStats) DashboardView {
+	// Initialize sections map
 	sec := map[string]*Section{
 		SectionCPU:     {ID: SectionCPU, Title: "CPU"},
 		SectionRAM:     {ID: SectionRAM, Title: "RAM"},
@@ -47,30 +48,29 @@ func BuildDashboard(results []engine.CheckResult, stats collector.RawStats) Dash
 		SectionNetwork: {ID: SectionNetwork, Title: "Network"},
 	}
 
+	// Map CheckResults to Sections using the Category field
 	for _, r := range results {
-		name := strings.ToLower(r.Name)
-
 		unit := "%"
-		if strings.Contains(name, "latency") {
+		if r.Category == engine.CategoryNetwork && strings.Contains(strings.ToLower(r.Name), "latency") {
 			unit = "ms"
 		}
 
 		it := Item{
-			Key:    strings.ReplaceAll(name, " ", "_"),
+			Key:    strings.ReplaceAll(strings.ToLower(r.Name), " ", "_"),
 			Label:  r.Name,
 			Value:  r.Value,
 			Unit:   unit,
 			Status: r.Status,
 		}
 
-		switch {
-		case strings.Contains(name, "cpu"):
+		switch r.Category {
+		case engine.CategoryCPU:
 			sec[SectionCPU].Items = append(sec[SectionCPU].Items, it)
-		case strings.Contains(name, "ram"), strings.Contains(name, "memory"):
+		case engine.CategoryRAM:
 			sec[SectionRAM].Items = append(sec[SectionRAM].Items, it)
-		case strings.Contains(name, "disk"), strings.Contains(name, "inode"), strings.Contains(name, "partition"):
+		case engine.CategoryDisk:
 			sec[SectionDisk].Items = append(sec[SectionDisk].Items, it)
-		case strings.Contains(name, "net"), strings.Contains(name, "tcp"), strings.Contains(name, "nic"):
+		case engine.CategoryNetwork:
 			sec[SectionNetwork].Items = append(sec[SectionNetwork].Items, it)
 		}
 	}

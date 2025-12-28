@@ -8,12 +8,12 @@ import (
 func TestEvaluate(t *testing.T) {
 	tests := []struct {
 		name     string
-		stats    collector.RawStats
+		stats    *collector.RawStats
 		expected map[string]string // Metric Name -> Expected Status
 	}{
 		{
 			name: "All Healthy",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:     10.0,
 				RAMUsage:     20.0,
 				DiskUsage:    30.0,
@@ -30,7 +30,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "CPU Critical",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:     95.0,
 				RAMUsage:     20.0,
 				DiskUsage:    30.0,
@@ -42,7 +42,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "RAM Warning",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:     10.0,
 				RAMUsage:     75.0,
 				DiskUsage:    30.0,
@@ -54,7 +54,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Disk Absolute Capacity Warning (<5GB free)",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:     10.0,
 				RAMUsage:     20.0,
 				DiskUsage:    10.0, // 10% of 4GB is 0.4GB used, 3.6GB free
@@ -66,7 +66,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Inode Critical",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:    10.0,
 				RAMUsage:    20.0,
 				DiskUsage:   30.0,
@@ -79,7 +79,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Skip Inodes when TotalInodes is 0",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:    10.0,
 				TotalInodes: 0,
 			},
@@ -89,7 +89,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Partition Warning and Inode Healthy",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:   10.0,
 				RAMUsage:   10.0,
 				DiskUsage:  10.0,
@@ -102,7 +102,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Active TCP Critical",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				CPUUsage:  10.0,
 				RAMUsage:  10.0,
 				DiskUsage: 10.0,
@@ -114,7 +114,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "NIC Errors Warning",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				NetInterfaces: []collector.NetInterfaceStats{{Name: "eth0", ErrIn: 1, ErrOut: 0, DropIn: 0, DropOut: 0}},
 			},
 			expected: map[string]string{
@@ -124,7 +124,7 @@ func TestEvaluate(t *testing.T) {
 		},
 		{
 			name: "Disk Health Failed",
-			stats: collector.RawStats{
+			stats: &collector.RawStats{
 				DiskHealth: []collector.DiskHealthInfo{{Device: "/dev/sda", Status: "failed"}},
 			},
 			expected: map[string]string{
@@ -135,7 +135,7 @@ func TestEvaluate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := Evaluate(tt.stats)
+			results := Evaluate(tt.stats, DefaultConfig())
 
 			// Check if we got the expected number of results for the "Skip Inodes" case
 			if tt.name == "Skip Inodes when TotalInodes is 0" {

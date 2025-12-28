@@ -3,34 +3,80 @@ package views
 import (
 	"fmt"
 	"strings"
+	"syschecker/internal/output"
 	"syschecker/ui/tui/state"
+	"syschecker/ui/tui/styles"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-type ConsoleView struct {
-	Content string
-}
+type ConsoleView struct{}
 
 func (v ConsoleView) Render(s state.AppState, props ViewProps) string {
-	// Note: s (state) isn't used here because the content is pre-generated and passed in the struct or props.
-	// But to match interface we accept it.
-	// Actually, the interface says `Render(s state.AppState, props ViewProps)`.
-	// We can put Content in Props or State.
-	// In the App, we generated content into a buffer.
-	// Let's assume the content is passed via the struct construction or we add "ConsoleContent" to ViewProps.
-	// Adding "ConsoleContent" to ViewProps seems cleaner to keep views stateless.
-
 	header := MenuHeaderStyle.Width(props.Width).Render("Live Console View")
+
+	dashboard := output.BuildDashboard(s.Results, s.Stats)
+	
+	var lines []string
+	lines = append(lines, styles.TitleStyle.Foreground(lipgloss.Color("36")).Render("■ SYSCHECKER REPORT"))
+
+	for _, sec := range dashboard.Sections {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("36")).Render("─ "+sec.Title))
+		for _, it := range sec.Items {
+			color := ColorForStatus(it.Status).GetForeground()
+			
+			label := it.Label
+			if len(label) > 20 {
+				label = label[:17] + "..."
+			}
+
+			valStr := ""
+			if it.Unit != "" {
+				valStr = fmt.Sprintf("%.1f%s", it.Value, it.Unit)
+			} else if it.Value != 0 {
+				valStr = fmt.Sprintf("%.1f", it.Value)
+			} else if it.Note != "" {
+				valStr = it.Note
+				if len(valStr) > 25 {
+					valStr = valStr[:22] + "..."
+				}
+			}
+
+			statusMarker := ""
+			statusStyle := lipgloss.NewStyle().Foreground(color)
+			if it.Status != "" {
+				switch it.Status {
+				case "WARN":
+					statusMarker = statusStyle.Render("!")
+				case "CRIT":
+					statusMarker = statusStyle.Render("X")
+				case "OK":
+					statusMarker = statusStyle.Render("✓")
+				default:
+					statusMarker = statusStyle.Render(it.Status[:1])
+				}
+			}
+
+			dotsCount := 22 - len(label)
+			if dotsCount < 0 {
+				dotsCount = 0
+			}
+			dots := lipgloss.NewStyle().Foreground(lipgloss.Color("36")).Render(strings.Repeat("·", dotsCount))
+			
+			line := fmt.Sprintf("  %s%s %10s %s", label, dots, valStr, statusMarker)
+			lines = append(lines, line)
+		}
+	}
+
+	summary := lipgloss.NewStyle().Foreground(lipgloss.Color("36")).Render(fmt.Sprintf("─ Summary: RAM: %dGB | Disk: %dGB", dashboard.TotalRAMGB, dashboard.TotalDiskGB))
+	lines = append(lines, summary)
 
 	availableHeight := props.Height - lipgloss.Height(header) - 4
 	if availableHeight < 1 {
 		availableHeight = 1
 	}
 
-	lines := strings.Split(v.Content, "\n")
 	totalLines := len(lines)
-
 	scrollY := props.ScrollY
 	if scrollY < 0 {
 		scrollY = 0

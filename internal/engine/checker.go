@@ -5,29 +5,24 @@ import (
 	"syschecker/internal/collector"
 )
 
+type Category string
+
 const (
 	StatusHealthy  = "OK"
 	StatusWarning  = "WARN"
 	StatusCritical = "CRIT"
 
-	CPUWarningThreshold    = 70.0
-	CPUCriticalThreshold   = 90.0
-	RAMWarningThreshold    = 70.0
-	RAMCriticalThreshold   = 90.0
-	DiskWarningThreshold   = 80.0
-	DiskCriticalThreshold  = 90.0
-	InodeWarningThreshold  = 80.0
-	InodeCriticalThreshold = 90.0
-	NetWarningThreshold    = 150.0 // ms
-	NetCriticalThreshold   = 500.0 // ms
-	ActiveTCPWarning       = 200.0
-	ActiveTCPCritical      = 500.0
+	CategoryCPU     Category = "cpu"
+	CategoryRAM     Category = "ram"
+	CategoryDisk    Category = "disk"
+	CategoryNetwork Category = "network"
 )
 
 type CheckResult struct {
-	Name   string
-	Value  float64
-	Status string
+	Name     string
+	Value    float64
+	Status   string
+	Category Category
 }
 
 func getStatus(value, warning, critical float64) string {
@@ -40,85 +35,136 @@ func getStatus(value, warning, critical float64) string {
 	return StatusHealthy
 }
 
-func Evaluate(stats collector.RawStats) []CheckResult {
-	var result []CheckResult
+func Evaluate(stats *collector.RawStats, cfg Config) []CheckResult {
+	// Pre-allocate to reduce allocations during append (estimated count ~15-20)
+	results := make([]CheckResult, 0, 24)
 
-	// CPU
-	result = append(result, CheckResult{
-		Name:   "CPU Usage",
-		Value:  stats.CPUUsage,
-		Status: getStatus(stats.CPUUsage, CPUWarningThreshold, CPUCriticalThreshold),
-	})
+	results = append(results, checkCPU(stats, cfg)...)
+	results = append(results, checkRAM(stats, cfg)...)
+	results = append(results, checkDisk(stats, cfg)...)
+	results = append(results, checkNetwork(stats, cfg)...)
 
-	// RAM
-	result = append(result, CheckResult{
-		Name:   "RAM Usage",
-		Value:  stats.RAMUsage,
-		Status: getStatus(stats.RAMUsage, RAMWarningThreshold, RAMCriticalThreshold),
-	})
+	return results
+}
 
-	// Disk
-	diskStatus := getStatus(stats.DiskUsage, DiskWarningThreshold, DiskCriticalThreshold)
+func checkCPU(stats *collector.RawStats, cfg Config) []CheckResult {
+	return []CheckResult{
+		{
+			Name:     "CPU Usage",
+			Value:    stats.CPUUsage,
+			Status:   getStatus(stats.CPUUsage, cfg.CPU.Warning, cfg.CPU.Critical),
+			Category: CategoryCPU,
+		},
+	}
+}
 
+func checkRAM(stats *collector.RawStats, cfg Config) []CheckResult {
+	return []CheckResult{
+		{
+			Name:     "RAM Usage",
+			Value:    stats.RAMUsage,
+			Status:   getStatus(stats.RAMUsage, cfg.RAM.Warning, cfg.RAM.Critical),
+			Category: CategoryRAM,
+		},
+	}
+}
+
+func checkDisk(stats *collector.RawStats, cfg Config) []CheckResult {
+	var results []CheckResult
+
+	// Overall Disk
+	diskStatus := getStatus(stats.DiskUsage, cfg.Disk.Warning, cfg.Disk.Critical)
 	// Absolute capacity check: Warn if less than 5GB remains, even if % is okay
 	freeGB := stats.TotalDisk_GB - uint64(float64(stats.TotalDisk_GB)*(stats.DiskUsage/100))
 	if freeGB < 5 && diskStatus == StatusHealthy {
 		diskStatus = StatusWarning
 	}
 
-	result = append(result, CheckResult{
-		Name:   "Disk Usage",
-		Value:  stats.DiskUsage,
-		Status: diskStatus,
+	results = append(results, CheckResult{
+		Name:     "Disk Usage",
+		Value:    stats.DiskUsage,
+		Status:   diskStatus,
+		Category: CategoryDisk,
 	})
 
-	// Per-partition disk usage (best-effort)
+	// Partitions
 	for _, p := range stats.Partitions {
-		pStatus := getStatus(p.UsedPercent, DiskWarningThreshold, DiskCriticalThreshold)
-		freeGB := p.TotalGB - uint64(float64(p.TotalGB)*(p.UsedPercent/100))
-		if freeGB < 5 && pStatus == StatusHealthy {
+		pStatus := getStatus(p.UsedPercent, cfg.Disk.Warning, cfg.Disk.Critical)
+		pFreeGB := p.TotalGB - uint64(float64(p.TotalGB)*(p.UsedPercent/100))
+		if pFreeGB < 5 && pStatus == StatusHealthy {
 			pStatus = StatusWarning
 		}
-		result = append(result, CheckResult{
-			Name:   fmt.Sprintf("Partition %s Usage", p.Mountpoint),
-			Value:  p.UsedPercent,
-			Status: pStatus,
+		results = append(results, CheckResult{
+			Name:     fmt.Sprintf("Partition %s Usage", p.Mountpoint),
+			Value:    p.UsedPercent,
+			Status:   pStatus,
+			Category: CategoryDisk,
 		})
-		// Inode pressure per-partition if available
+
 		if p.TotalInodes > 0 {
-			inodeStatus := getStatus(p.InodeUsage, InodeWarningThreshold, InodeCriticalThreshold)
-			result = append(result, CheckResult{
-				Name:   fmt.Sprintf("Partition %s Inodes", p.Mountpoint),
-				Value:  p.InodeUsage,
-				Status: inodeStatus,
+			inodeStatus := getStatus(p.InodeUsage, cfg.Inode.Warning, cfg.Inode.Critical)
+			results = append(results, CheckResult{
+				Name:     fmt.Sprintf("Partition %s Inodes", p.Mountpoint),
+				Value:    p.InodeUsage,
+				Status:   inodeStatus,
+				Category: CategoryDisk,
 			})
 		}
 	}
 
-	// Inodes (only if available)
+	// Overall Inodes
 	if stats.TotalInodes > 0 {
-		result = append(result, CheckResult{
-			Name:   "Inode Usage",
-			Value:  stats.InodeUsage,
-			Status: getStatus(stats.InodeUsage, InodeWarningThreshold, InodeCriticalThreshold),
+		results = append(results, CheckResult{
+			Name:     "Inode Usage",
+			Value:    stats.InodeUsage,
+			Status:   getStatus(stats.InodeUsage, cfg.Inode.Warning, cfg.Inode.Critical),
+			Category: CategoryDisk,
 		})
 	}
 
-	// Network Check
+	// Disk Health
+	for _, h := range stats.DiskHealth {
+		healthStatus := StatusHealthy
+		switch h.Status {
+		case "failed":
+			healthStatus = StatusCritical
+		case "unknown":
+			healthStatus = StatusWarning
+		}
+		val := 0.0
+		if h.Status == "failed" {
+			val = 1.0
+		}
+		results = append(results, CheckResult{
+			Name:     fmt.Sprintf("Disk Health %s", h.Device),
+			Value:    val,
+			Status:   healthStatus,
+			Category: CategoryDisk,
+		})
+	}
+
+	return results
+}
+
+func checkNetwork(stats *collector.RawStats, cfg Config) []CheckResult {
+	var results []CheckResult
+
+	// Connectivity & Latency
 	netStatus := StatusHealthy
 	if !stats.IsConnected {
 		netStatus = StatusCritical
 	} else {
-		netStatus = getStatus(stats.NetLatency_ms, NetWarningThreshold, NetCriticalThreshold)
+		netStatus = getStatus(stats.NetLatency_ms, cfg.Net.Warning, cfg.Net.Critical)
 	}
 
-	result = append(result, CheckResult{
-		Name:   "Net Latency",
-		Value:  stats.NetLatency_ms,
-		Status: netStatus,
+	results = append(results, CheckResult{
+		Name:     "Net Latency",
+		Value:    stats.NetLatency_ms,
+		Status:   netStatus,
+		Category: CategoryNetwork,
 	})
 
-	// Per-interface packet errors/drops (best-effort)
+	// Interface Errors/Drops
 	for _, nic := range stats.NetInterfaces {
 		errTotal := float64(nic.ErrIn + nic.ErrOut)
 		dropTotal := float64(nic.DropIn + nic.DropOut)
@@ -133,46 +179,27 @@ func Evaluate(stats collector.RawStats) []CheckResult {
 			dropStatus = StatusWarning
 		}
 
-		result = append(result, CheckResult{
-			Name:   fmt.Sprintf("NIC %s Errors", nic.Name),
-			Value:  errTotal,
-			Status: errStatus,
+		results = append(results, CheckResult{
+			Name:     fmt.Sprintf("NIC %s Errors", nic.Name),
+			Value:    errTotal,
+			Status:   errStatus,
+			Category: CategoryNetwork,
 		})
-		result = append(result, CheckResult{
-			Name:   fmt.Sprintf("NIC %s Drops", nic.Name),
-			Value:  dropTotal,
-			Status: dropStatus,
+		results = append(results, CheckResult{
+			Name:     fmt.Sprintf("NIC %s Drops", nic.Name),
+			Value:    dropTotal,
+			Status:   dropStatus,
+			Category: CategoryNetwork,
 		})
 	}
 
-	// Active TCP connections (best-effort)
-	result = append(result, CheckResult{
-		Name:   "Active TCP",
-		Value:  float64(stats.ActiveTCP),
-		Status: getStatus(float64(stats.ActiveTCP), ActiveTCPWarning, ActiveTCPCritical),
+	// Active TCP
+	results = append(results, CheckResult{
+		Name:     "Active TCP",
+		Value:    float64(stats.ActiveTCP),
+		Status:   getStatus(float64(stats.ActiveTCP), cfg.ActiveTCP.Warning, cfg.ActiveTCP.Critical),
+		Category: CategoryNetwork,
 	})
 
-	// Disk health (SMART) best-effort
-	for _, h := range stats.DiskHealth {
-		healthStatus := StatusHealthy
-		switch h.Status {
-		case "failed":
-			healthStatus = StatusCritical
-		case "unknown":
-			healthStatus = StatusWarning
-		default:
-			healthStatus = StatusHealthy
-		}
-		value := 0.0
-		if h.Status == "failed" {
-			value = 1.0
-		}
-		result = append(result, CheckResult{
-			Name:   fmt.Sprintf("Disk Health %s", h.Device),
-			Value:  value,
-			Status: healthStatus,
-		})
-	}
-
-	return result
+	return results
 }

@@ -21,7 +21,7 @@ const (
 
 // AppState holds the current snapshot of the system
 type AppState struct {
-	Stats       collector.RawStats
+	Stats       *collector.RawStats
 	Results     []engine.CheckResult
 	LastUpdate  time.Time
 	Err         error

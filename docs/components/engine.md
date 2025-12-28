@@ -11,3 +11,8 @@ The Engine processes the data gathered by the Collector.
 
 Located in `internal/engine/`.
 - `checker.go`: Core logic for evaluating system health.
+- `config.go`: Defines the `Config` and `Thresholds` structures for customizable health checks.
+
+## Configuration
+
+The engine uses a `Config` struct to determine health status. You can use `engine.DefaultConfig()` for standard thresholds or customize them as needed.

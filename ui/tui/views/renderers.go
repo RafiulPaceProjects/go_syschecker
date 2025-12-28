@@ -24,9 +24,9 @@ func RenderDashboard(s state.AppState, spinnerView, chartView string) string {
 	})
 }
 
-func RenderRawConsole(content string, width, height, scrollY int) string {
-	v := ConsoleView{Content: content}
-	return v.Render(state.AppState{}, ViewProps{
+func RenderRawConsole(s state.AppState, width, height, scrollY int) string {
+	v := ConsoleView{}
+	return v.Render(s, ViewProps{
 		Width:   width,
 		Height:  height,
 		ScrollY: scrollY,

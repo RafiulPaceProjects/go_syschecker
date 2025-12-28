@@ -4,16 +4,16 @@ import "testing"
 
 // MockCollector satisfies the StatsProvider interface
 type MockCollector struct {
-	Stats RawStats
+	Stats *RawStats
 	Err   error
 }
 
-func (m MockCollector) GetRawMetrics() (RawStats, error) {
+func (m MockCollector) GetRawMetrics() (*RawStats, error) {
 	return m.Stats, m.Err
 }
 
 func TestMockCollector(t *testing.T) {
-	expectedStats := RawStats{
+	expectedStats := &RawStats{
 		CPUUsage:    10.5,
 		RAMUsage:    50.0,
 		TotalRAM_GB: 16,

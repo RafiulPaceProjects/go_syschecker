@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
@@ -107,6 +108,8 @@ type DiskHealthInfo struct {
 // StatsProvider defines the contract for any system metrics collector.
 type StatsProvider interface {
 	GetRawMetrics() (*RawStats, error)
+	GetFastMetrics(ctx context.Context) (*RawStats, error)
+	GetSlowMetrics(ctx context.Context) (*RawStats, error)
 }
 
 // ============================================================================
@@ -172,48 +175,91 @@ type healthResult struct {
 }
 
 // GetRawMetrics collects all system metrics concurrently.
+// It is kept for backward compatibility and delegates to the new split methods.
 func (s SystemCollector) GetRawMetrics() (*RawStats, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	var fastStats, slowStats *RawStats
+	var fastErr, slowErr error
+
+	go func() {
+		defer wg.Done()
+		fastStats, fastErr = s.GetFastMetrics(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		slowStats, slowErr = s.GetSlowMetrics(ctx)
+	}()
+
+	wg.Wait()
+
+	if fastErr != nil {
+		return nil, fastErr
+	}
+
+	// Merging:
+	stats := fastStats
+	// We check slowErr only if we care, but for now we just skip merging if it failed or is nil
+	if slowErr == nil && slowStats != nil {
+		stats.NetLatency_ms = slowStats.NetLatency_ms
+		stats.IsConnected = slowStats.IsConnected
+		stats.ActiveTCP = slowStats.ActiveTCP
+		stats.DiskHealth = slowStats.DiskHealth
+	}
+	return stats, nil
+}
+
+// GetFastMetrics collects high-frequency metrics (CPU, RAM, Disk Usage/IO, Net IO).
+func (s SystemCollector) GetFastMetrics(ctx context.Context) (*RawStats, error) {
 	cpuCh := make(chan cpuResult, 1)
 	loadCh := make(chan loadResult, 1)
 	memCh := make(chan memResult, 1)
 	diskCh := make(chan diskResult, 1)
-	netCh := make(chan netResult, 1)
 	netIOCh := make(chan netIOResult, 1)
-	netConnCh := make(chan netConnResult, 1)
 	partitionCh := make(chan partitionResult, 1)
 	ioCh := make(chan ioResult, 1)
-	healthCh := make(chan healthResult, 1)
 
 	var wg sync.WaitGroup
-	wg.Add(10)
+	wg.Add(7)
 
 	go s.fetchCPU(&wg, cpuCh)
 	go s.fetchLoad(&wg, loadCh)
 	go s.fetchMemory(&wg, memCh)
 	go s.fetchDisk(&wg, diskCh)
-	go s.fetchNetwork(&wg, netCh)
 	go s.fetchNetIO(&wg, netIOCh)
-	go s.fetchNetConns(&wg, netConnCh)
 	go s.fetchPartitions(&wg, partitionCh)
 	go s.fetchIO(&wg, ioCh)
-	go s.fetchHealth(&wg, healthCh)
 
+	// Wait with context awareness?
+	// For simplicity, we just wait, but individual fetchers could take context.
+	// Currently fetchers are synchronous Gopsutil calls which are generally fast (except maybe net/disk io on bad hardware).
 	wg.Wait()
 
 	// Gather results
 	cpuRes := <-cpuCh
+	loadRes := <-loadCh
+	memRes := <-memCh
+	diskRes := <-diskCh
+	netIORes := <-netIOCh
+	partitionRes := <-partitionCh
+	ioRes := <-ioCh
+
 	if cpuRes.err != nil {
 		return nil, fmt.Errorf("failed to get CPU metrics: %w", cpuRes.err)
 	}
-
-	loadRes := <-loadCh
 	if loadRes.err != nil {
 		return nil, fmt.Errorf("failed to get load average: %w", loadRes.err)
 	}
-
-	memRes := <-memCh
 	if memRes.err != nil {
 		return nil, fmt.Errorf("failed to get memory metrics: %w", memRes.err)
+	}
+	if diskRes.err != nil {
+		return nil, fmt.Errorf("failed to get disk metrics: %w", diskRes.err)
 	}
 
 	swapInfo, err := mem.SwapMemory()
@@ -225,18 +271,6 @@ func (s SystemCollector) GetRawMetrics() (*RawStats, error) {
 		swapTotal = swapInfo.Total
 		swapUsed = swapInfo.Used
 	}
-
-	diskRes := <-diskCh
-	if diskRes.err != nil {
-		return nil, fmt.Errorf("failed to get disk metrics: %w", diskRes.err)
-	}
-
-	netRes := <-netCh
-	netIORes := <-netIOCh
-	netConnRes := <-netConnCh
-	partitionRes := <-partitionCh
-	ioRes := <-ioCh
-	healthRes := <-healthCh
 
 	inodeUsagePercent := 0.0
 	if diskRes.value.InodesTotal > 0 {
@@ -267,11 +301,34 @@ func (s SystemCollector) GetRawMetrics() (*RawStats, error) {
 		TotalInodes:   diskRes.value.InodesTotal,
 		Partitions:    partitionRes.partitions,
 		IOCounters:    ioRes.counters,
-		DiskHealth:    healthRes.health,
 		NetInterfaces: netIORes.stats,
-		ActiveTCP:     netConnRes.activeTCP,
+	}, nil
+}
+
+// GetSlowMetrics collects low-frequency metrics (Disk Health, Network Latency, Net Connections).
+func (s SystemCollector) GetSlowMetrics(ctx context.Context) (*RawStats, error) {
+	netCh := make(chan netResult, 1)
+	netConnCh := make(chan netConnResult, 1)
+	healthCh := make(chan healthResult, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go s.fetchNetwork(ctx, &wg, netCh)
+	go s.fetchNetConns(&wg, netConnCh)
+	go s.fetchHealth(&wg, healthCh)
+
+	wg.Wait()
+
+	netRes := <-netCh
+	netConnRes := <-netConnCh
+	healthRes := <-healthCh
+
+	return &RawStats{
 		NetLatency_ms: netRes.latency,
 		IsConnected:   netRes.online,
+		ActiveTCP:     netConnRes.activeTCP,
+		DiskHealth:    healthRes.health,
 	}, nil
 }
 
@@ -320,11 +377,13 @@ func (s SystemCollector) fetchDisk(wg *sync.WaitGroup, ch chan diskResult) {
 	ch <- diskResult{value: value, err: err}
 }
 
-func (s SystemCollector) fetchNetwork(wg *sync.WaitGroup, ch chan netResult) {
+func (s SystemCollector) fetchNetwork(ctx context.Context, wg *sync.WaitGroup, ch chan netResult) {
 	defer wg.Done()
 	defer close(ch)
+
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 2*time.Second)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", "8.8.8.8:53")
 	if err != nil {
 		ch <- netResult{latency: 0, online: false}
 		return

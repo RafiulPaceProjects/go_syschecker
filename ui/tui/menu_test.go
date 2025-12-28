@@ -15,10 +15,6 @@ import (
 // MockStatsProvider for testing
 type MockStatsProvider struct{}
 
-func (m MockStatsProvider) GetRawMetrics() (*collector.RawStats, error) {
-	return &collector.RawStats{}, nil
-}
-
 func (m MockStatsProvider) GetFastMetrics(ctx context.Context) (*collector.RawStats, error) {
 	return &collector.RawStats{}, nil
 }

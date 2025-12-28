@@ -107,7 +107,6 @@ type DiskHealthInfo struct {
 
 // StatsProvider defines the contract for any system metrics collector.
 type StatsProvider interface {
-	GetRawMetrics() (*RawStats, error)
 	GetFastMetrics(ctx context.Context) (*RawStats, error)
 	GetSlowMetrics(ctx context.Context) (*RawStats, error)
 }
@@ -174,45 +173,6 @@ type healthResult struct {
 	err    error
 }
 
-// GetRawMetrics collects all system metrics concurrently.
-// It is kept for backward compatibility and delegates to the new split methods.
-func (s SystemCollector) GetRawMetrics() (*RawStats, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	var fastStats, slowStats *RawStats
-	var fastErr, slowErr error
-
-	go func() {
-		defer wg.Done()
-		fastStats, fastErr = s.GetFastMetrics(ctx)
-	}()
-
-	go func() {
-		defer wg.Done()
-		slowStats, slowErr = s.GetSlowMetrics(ctx)
-	}()
-
-	wg.Wait()
-
-	if fastErr != nil {
-		return nil, fastErr
-	}
-
-	// Merging:
-	stats := fastStats
-	// We check slowErr only if we care, but for now we just skip merging if it failed or is nil
-	if slowErr == nil && slowStats != nil {
-		stats.NetLatency_ms = slowStats.NetLatency_ms
-		stats.IsConnected = slowStats.IsConnected
-		stats.ActiveTCP = slowStats.ActiveTCP
-		stats.DiskHealth = slowStats.DiskHealth
-	}
-	return stats, nil
-}
 
 // GetFastMetrics collects high-frequency metrics (CPU, RAM, Disk Usage/IO, Net IO).
 func (s SystemCollector) GetFastMetrics(ctx context.Context) (*RawStats, error) {

@@ -1,0 +1,35 @@
+services:
+  syschecker:
+    build:
+      context: .
+      args:
+        GO_VERSION: 1.25.5
+    image: syschecker:latest
+    container_name: syschecker-dev
+    
+    # TUI applications require a TTY and stdin open
+    stdin_open: true # -i
+    tty: true        # -t
+
+    # Mount host directories to allow the container to monitor the host system
+    # instead of just the container's isolated environment.
+    volumes:
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /dev:/dev:ro # Required for smartctl to access disk devices
+
+    # Privileged mode is often required for low-level hardware access (smartctl)
+    privileged: true
+    
+    # Share the host's PID namespace to see host processes/load
+    pid: host
+
+    ports:
+      - "8080:8080" # Placeholder port mapping
+
+    environment:
+      - TERM=xterm-256color
+      - LOG_LEVEL=info
+
+    # Override the ENTRYPOINT if needed (e.g., to run a shell or different flags)
+    # command: ["./syschecker"] 

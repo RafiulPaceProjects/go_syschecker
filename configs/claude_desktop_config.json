@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "syschecker": {
+      "command": "/absolute/path/to/syschecker-mcp",
+      "env": {
+        "GEMINI_API_KEY": "your-gemini-api-key-here",
+        "NEO4J_PASSWORD": "password",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "DUCKDB_PATH": "/absolute/path/to/syschecker.db"
+      }
+    }
+  }
+}

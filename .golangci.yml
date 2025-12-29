@@ -1,0 +1,51 @@
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  enable:
+    - gofmt
+    - goimports
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+    - misspell
+    - unconvert
+    - unparam
+    - gocyclo
+    - dupl
+    - prealloc
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - dupl
+    - path: test_.*\.go\.bak
+      linters:
+        - all
+    - path: query_.*\.go\.bak
+      linters:
+        - all
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true

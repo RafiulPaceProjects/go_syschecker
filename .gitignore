@@ -1,10 +1,21 @@
 # Binaries
 syschecker
+mcp
+query_neo4j
+syschecker-mcp
+test_pipeline
+chatbot
+test_tools
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# Databases
+*.db
+*.db.wal
+*.db.shm
 
 # Test binary built by 'go test -c'
 *.test
@@ -29,3 +40,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Environment variables
+.env
+env/

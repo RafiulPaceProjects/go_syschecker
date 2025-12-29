@@ -1,65 +1,86 @@
-# Syschecker
+# SysChecker
 
-**Syschecker** is a robust, terminal-based system monitoring tool written in Go. It provides real-time insights into your system's health, performance metrics, and hardware status through a beautiful and responsive Terminal User Interface (TUI).
+**SysChecker** is an AI-powered system monitoring platform that leverages the **Model Context Protocol (MCP)** to provide intelligent insights into system health, performance, and historical trends.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.25.5-cyan)
-![Docker](https://img.shields.io/badge/docker-ready-blue)
+![MCP](https://img.shields.io/badge/MCP-ready-green)
+![Gemini](https://img.shields.io/badge/Gemini-powered-orange)
 
 ## Features
 
-- **Real-time Monitoring**: Live updates for CPU, Memory, Disk, and Network usage.
-- **Hardware Health**: Integration with `smartctl` for disk health monitoring.
-- **Interactive TUI**: Navigate effortlessly with a menu-driven interface built with `bubbletea`.
-- **Dockerized**: specific configuration for safe, isolated deployment while monitoring the host.
-- **Visuals**: Smooth animations and modern styling using `lipgloss`.
+- **AI-Powered Q&A**: Ask natural language questions like "Why is my server slow?" or "Show me memory trends" using GraphRAG.
+- **Real-Time Monitoring**: Instant access to CPU, Memory, Disk, and Network metrics via MCP tools.
+- **Historical Analysis**: Query time-series data stored in DuckDB for deep performance analysis.
+- **Graph-Based Insights**: Relationships between system components and alerts are stored in Neo4j for complex correlation.
+- **MCP Integration**: Seamlessly connects with Claude Desktop or any MCP-compatible client.
+- **Interactive Chatbot**: A dedicated terminal-based chatbot for direct interaction with the system.
 
-## Installation
+## Architecture
 
-### Using Docker (Recommended)
+SysChecker consists of:
+1.  **MCP Server**: The core engine exposing tools for metrics, graph queries, and AI analysis.
+2.  **GraphRAG Engine**: Uses Google Gemini to synthesize answers from system data.
+3.  **Storage Layer**: Neo4j for graph relationships and DuckDB for high-performance time-series data.
+4.  **Sensors**: Low-level collectors for real-time system metrics.
 
-Syschecker is designed to run in a container while monitoring the host system.
+## Prerequisites
 
-1.  **Build**:
-    ```bash
-    docker-compose build
-    ```
+- **Go 1.25+**
+- **Docker** (for Neo4j)
+- **Google Gemini API Key**: [Get one here](https://aistudio.google.com/app/apikey)
 
-2.  **Run**:
-    ```bash
-    docker-compose up -d
-    ```
+## Quick Start
 
-3.  **Logs/Attach**:
-    ```bash
-    docker-compose logs -f
-    ```
+### 1. Setup Environment
 
-### Local Development
+Create a `.env` file in `ui/Testing/env/` (or set environment variables):
 
-1.  **Prerequisites**: Go 1.25+, `smartmontools` (optional, for disk checks).
-2.  **Clone**:
-    ```bash
-    git clone https://github.com/RafiulPaceProjects/go_syschecker.git
-    cd syschecker
-    ```
-3.  **Run**:
-    ```bash
-    go run .
-    ```
+```bash
+GEMINI_API_KEY=your_api_key_here
+NEO4J_PASSWORD=password
+```
+
+### 2. Start Neo4j
+
+```bash
+docker run -d --name syschecker-neo4j \
+    -p 7474:7474 -p 7687:7687 \
+    -e NEO4J_AUTH=neo4j/password \
+    neo4j:latest
+```
+
+### 3. Build and Run
+
+You can use the provided scripts for a quick setup:
+
+#### Run the Chatbot
+```bash
+./ui/Testing/run.sh
+```
+
+#### Run MCP Locally (Server + Client)
+```bash
+./scripts/run-mcp-local.sh
+```
 
 ## Usage
 
-Once running, use the keyboard to navigate:
+### Chatbot Commands
+Once the chatbot is running, you can ask:
+- "What is the current CPU usage?"
+- "Are there any disk space issues?"
+- "Show me the memory trend for the last hour."
+- "Why did the system flag a high load earlier?"
 
-- **Arrow Keys / H, J, K, L**: Navigate menus and lists.
-- **Enter**: Select an option.
-- **Q / Ctrl+C**: Quit the application.
+### Claude Desktop Integration
+To use SysChecker with Claude Desktop, add the configuration from `configs/claude_desktop_config.json` to your Claude configuration file.
 
 ## Documentation
 
 Detailed documentation is available in the `docs/` directory:
+- [MCP Implementation](docs/mcp_implementation.md)
+- [Local MCP Architecture](docs/mcp_local_architecture.md)
 - [Architecture Overview](docs/architecture/overview.md)
-- [UI Component](docs/components/ui.md)
-- [Collector Component](docs/components/collector.md)
-- [Engine Component](docs/components/engine.md)
+- [Sensor Report](docs/sensor_report.md)
+- [Refactoring Solutions](docs/refactoring_solutions.md)
